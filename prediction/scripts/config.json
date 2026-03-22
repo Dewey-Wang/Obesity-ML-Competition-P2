@@ -1,0 +1,51 @@
+{
+  "gene_to_idx": {
+    "CEBPA": 0,
+    "CEBPB": 1,
+    "CEBPD": 2,
+    "CREB1": 3,
+    "FOXO1": 4,
+    "KIF11": 5,
+    "KLF15": 6,
+    "MLXIPL": 7,
+    "NC": 8,
+    "NR3C1": 9,
+    "POLR2D": 10,
+    "PPARG": 11,
+    "PPARG2": 12,
+    "SF3B1": 13,
+    "SREBF1": 14,
+    "STAT5A": 15,
+    "STAT5B": 16,
+    "TCF7L2": 17,
+    "ZBED3": 18
+  },
+  "idx_to_gene": {
+    "0": "CEBPA",
+    "1": "CEBPB",
+    "2": "CEBPD",
+    "3": "CREB1",
+    "4": "FOXO1",
+    "5": "KIF11",
+    "6": "KLF15",
+    "7": "MLXIPL",
+    "8": "NC",
+    "9": "NR3C1",
+    "10": "POLR2D",
+    "11": "PPARG",
+    "12": "PPARG2",
+    "13": "SF3B1",
+    "14": "SREBF1",
+    "15": "STAT5A",
+    "16": "STAT5B",
+    "17": "TCF7L2",
+    "18": "ZBED3"
+  },
+  "num_genes": 19,
+  "state_prop": {
+    "adipo": 0.193,
+    "pre_adipo": 0.272,
+    "other": 0.467,
+    "lipo_adipo": 0.067
+  }
+}
