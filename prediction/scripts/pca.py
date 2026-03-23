@@ -5,8 +5,11 @@ import joblib
 
 def compute_pca_latent(
     adata,
+    save_path,
     d=512,
     seed=42,
+    whiten = False
+    
 ):
     
     # HVG matrix
@@ -17,6 +20,7 @@ def compute_pca_latent(
 
     pca = PCA(
         n_components=d,
+        whiten=whiten,
         random_state=seed
     )
 
@@ -28,7 +32,7 @@ def compute_pca_latent(
     # save PCA for inverse transform
     joblib.dump(
         pca,
-        f"pca_{d}.joblib"
+        save_path
     )
-    print(f"save in pca_{d}.joblib")
+    print(f"save in {save_path}")
     return adata, pca

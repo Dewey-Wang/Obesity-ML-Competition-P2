@@ -20,7 +20,6 @@ def load_gene_list(gene_path):
     return genes
 
 
-
 def save_prediction_h5ad(
 
     X_pred_full,
@@ -29,6 +28,8 @@ def save_prediction_h5ad(
     predict_perturbations,
 
     prediction_h5ad_file_path,
+
+    latent_all=None,   # <-- 新增
 
     genes_to_predict_path="data/predict_genes_2.txt",
 
@@ -42,6 +43,9 @@ def save_prediction_h5ad(
     into official competition format.
 
     genes_to_predict loaded automatically from txt file.
+
+    Optional:
+    latent_all -> saved into .obsm["X_pca"]
     """
 
     ############################################################
@@ -69,16 +73,28 @@ def save_prediction_h5ad(
         f"Cell number mismatch {X_pred_full.shape[0]} != {expected_n_cells}"
 
 
+    if latent_all is not None:
+
+        assert latent_all.shape[0] == expected_n_cells, \
+            f"latent cell number mismatch {latent_all.shape[0]} != {expected_n_cells}"
+
+
     ############################################################
     # reorder genes to match txt file order
     ############################################################
 
     gene_index_map = {
+
         g: i
+
         for i, g in enumerate(
+
             adata_full.var_names
+
         )
+
     }
+
 
     missing_genes = [
 
@@ -88,11 +104,15 @@ def save_prediction_h5ad(
 
     ]
 
+
     if len(missing_genes) > 0:
 
         raise ValueError(
+
             f"{len(missing_genes)} genes missing "
+
             f"(example: {missing_genes[:5]})"
+
         )
 
 
@@ -131,7 +151,7 @@ def save_prediction_h5ad(
 
     var = pd.DataFrame(
 
-        index = genes_to_predict
+        index=genes_to_predict
 
     )
 
@@ -142,13 +162,27 @@ def save_prediction_h5ad(
 
     adata_pred = ad.AnnData(
 
-        X = X_final,
+        X=X_final,
 
-        obs = obs,
+        obs=obs,
 
-        var = var
+        var=var
 
     )
+
+
+    ############################################################
+    # save latent representation
+    ############################################################
+
+    if latent_all is not None:
+
+        adata_pred.obsm["X_pca"] = latent_all.astype(dtype)
+
+        print(
+            "latent stored in .obsm['X_pca']:",
+            latent_all.shape
+        )
 
 
     ############################################################
@@ -156,22 +190,16 @@ def save_prediction_h5ad(
     ############################################################
 
     if os.path.exists(
-
         prediction_h5ad_file_path
-
     ):
 
         os.remove(
-
             prediction_h5ad_file_path
-
         )
 
 
     adata_pred.write_h5ad(
-
         prediction_h5ad_file_path
-
     )
 
 

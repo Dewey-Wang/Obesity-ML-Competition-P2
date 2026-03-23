@@ -350,14 +350,14 @@ import numpy as np
 
 
 def get_primary_control(pert):
-
+    
     n_guides = len(pert.split("+"))
 
     if n_guides == 1:
         return "NC"
 
-    elif n_guides == 2:
-        return "NC+NC"
+    # 2 guides or more → 使用 NC+NC
+    return "NC+NC"
 
 
 def make_all_pairs(
@@ -412,6 +412,27 @@ def make_random_pairs(
         })
 
     return pairs
+
+def is_single_gene_with_nc(pert):
+    
+    genes = pert.split("+")
+
+    non_nc = [
+
+        g for g in genes
+
+        if g != "NC"
+
+    ]
+
+    return (
+
+        len(non_nc) == 1
+
+        and len(genes) > 1
+
+    )
+    
 def build_pairs_from_anndata(
     adata,
     small_threshold=200,
@@ -527,8 +548,8 @@ def build_pairs_from_anndata(
         # NC fallback
         # ------------------
 
-        if pert in ["CEBPB+NC","KIF11+NC"]:
-
+        if is_single_gene_with_nc(pert):
+            print(f"{pert} detected as single-gene perturbation" )
             adata_nc = adata[
                 adata.obs["gene"] == "NC"
             ]

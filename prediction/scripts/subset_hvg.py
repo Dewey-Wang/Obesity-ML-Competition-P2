@@ -1,6 +1,4 @@
-import scanpy as sc
 import pandas as pd
-
 
 def subset_to_hvg(
     adata,
@@ -9,22 +7,11 @@ def subset_to_hvg(
     include_signature_genes=False,
     verbose=True
 ):
-    """
-    Subset AnnData to HVG genes, optionally including signature genes.
 
-    Returns
-    -------
-    adata_subset : AnnData
+    ############################################################
+    # load HVG in fixed order
+    ############################################################
 
-    hvg_genes : list
-        original HVG genes (no filtering)
-
-    signature_genes : list or None
-        signature genes present in dataset
-        returned only when include_signature_genes=True
-    """
-
-    # ---- load HVG ----
     hvg_genes = pd.read_csv(
         hvg_path,
         header=None
@@ -33,11 +20,28 @@ def subset_to_hvg(
     if verbose:
         print("HVG requested:", len(hvg_genes))
 
-    final_genes = set(hvg_genes)
+
+    ############################################################
+    # keep order and avoid duplicates
+    ############################################################
+
+    ordered_genes = []
+    seen = set()
+
+    for g in hvg_genes:
+
+        if g in adata.var_names and g not in seen:
+
+            ordered_genes.append(g)
+            seen.add(g)
+
+
+    ############################################################
+    # optionally add signature genes (append to end)
+    ############################################################
 
     signature_genes = None
 
-    # ---- optionally load signature genes ----
     if include_signature_genes:
 
         sig_df = pd.read_csv(signature_path)
@@ -49,31 +53,32 @@ def subset_to_hvg(
             .tolist()
         )
 
-        # keep only genes present in dataset
-        signature_genes = [
-            g for g in sig_all
-            if g in adata.var_names
-        ]
+        signature_genes = []
 
-        final_genes = final_genes.union(signature_genes)
+        for g in sig_all:
+
+            if g in adata.var_names and g not in seen:
+
+                ordered_genes.append(g)
+                seen.add(g)
+
+                signature_genes.append(g)
 
         if verbose:
 
             print("Signature genes requested:", len(sig_all))
-            print("Signature genes found in dataset:", len(signature_genes))
-    # ---- subset genes that exist in dataset ----
-    overlap = [
-        g for g in final_genes
-        if g in adata.var_names
-    ]
+            print("Signature genes used:", len(signature_genes))
 
-    missing = set(final_genes) - set(overlap)
+
+    ############################################################
+    # subset
+    ############################################################
+
+    adata_subset = adata[:, ordered_genes].copy()
 
     if verbose:
 
-        print("Total genes used:", len(overlap))
-        print("Missing genes:", len(missing))
+        print("Total genes used:", len(ordered_genes))
 
-    adata_subset = adata[:, overlap].copy()
 
     return adata_subset, hvg_genes, signature_genes

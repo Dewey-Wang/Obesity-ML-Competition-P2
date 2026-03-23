@@ -3,7 +3,7 @@ import scipy.stats
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_squared_error
 import pandas as pd
-
+import scanpy as sc
 def compute_metric_l1_distance(
     true_state_proportion_df: pd.DataFrame,
     pred_state_proprotion_df: pd.DataFrame,
@@ -210,7 +210,6 @@ def load_control_cells(
 
     return X_ctrl
 
-
 def reconstruct_full_expression_with_control(
 
     adata_full,
@@ -218,39 +217,75 @@ def reconstruct_full_expression_with_control(
 
     X_hvg_rec,
 
-    X_ctrl_sample
+    pert_list,
+
+    X_ctrl_NC,
+    X_ctrl_NCNC
 
 ):
 
     hvg_mask = np.isin(
+
         adata_full.var_names,
+
         adata_hvg.var_names
+
     )
+
 
     non_hvg_mask = ~hvg_mask
 
 
-    X_pred = np.zeros(
-        (X_hvg_rec.shape[0],
-         adata_full.n_vars)
-    )
+    ctrl_blocks = []
+
 
     ##################################
-    # HVG genes
+    # build control matrix per perturbation
     ##################################
+
+    for pert in pert_list:
+
+        n_genes = len(pert.split("+"))
+
+        if n_genes == 1:
+
+            ctrl_block = X_ctrl_NC
+
+        else:
+
+            ctrl_block = X_ctrl_NCNC
+
+
+        ctrl_blocks.append(ctrl_block)
+
+
+    X_ctrl_full = np.vstack(ctrl_blocks)
+
+
+    ##################################
+    # combine HVG + non-HVG
+    ##################################
+
+    X_pred = np.zeros(
+
+        (
+
+            X_hvg_rec.shape[0],
+
+            adata_full.n_vars
+
+        )
+
+    )
+
 
     X_pred[:, hvg_mask] = X_hvg_rec
 
 
-    ##################################
-    # non-HVG genes
-    ##################################
-
-    X_pred[:, non_hvg_mask] = X_ctrl_sample[:, non_hvg_mask]
+    X_pred[:, non_hvg_mask] = X_ctrl_full[:, non_hvg_mask]
 
 
     return X_pred
-
 
 ############################################
 # helper: subsample across batches
