@@ -2,9 +2,44 @@ import numpy as np
 import scipy.stats
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_squared_error
+import pandas as pd
 
-import scanpy as sc
-import numpy as np
+def compute_metric_l1_distance(
+    true_state_proportion_df: pd.DataFrame,
+    pred_state_proprotion_df: pd.DataFrame,
+) -> float:
+    # Going over all the genes that were perturbed in this set
+    unique_perturb_genes = list(true_state_proportion_df["gene"].unique())
+
+    all_l1_loss_list = []
+    for gene in unique_perturb_genes:
+        # Slicing the column with this gene
+        true_gene_df = true_state_proportion_df[true_state_proportion_df["gene"] == gene]
+        pred_gene_df = pred_state_proprotion_df[pred_state_proprotion_df["gene"] == gene]
+
+        # print(gene, pred_gene_df.shape[0])
+        assert true_gene_df.shape[0] == 1 and pred_gene_df.shape[0] == 1, f"Invalid prediction count for state gene={gene} count={pred_gene_df.shape[0]}!=1"
+
+        # Getting the L1 loss for main  pre, adipo and other
+        l1_three = (
+            np.abs(true_gene_df.iloc[0]["pre_adipo"] - pred_gene_df.iloc[0]["pre_adipo"]) +
+            np.abs(true_gene_df.iloc[0]["adipo"] - pred_gene_df.iloc[0]["adipo"]) +
+            np.abs(true_gene_df.iloc[0]["other"] - pred_gene_df.iloc[0]["other"])
+        )
+
+        # Getting the L1 loss for lipo by adipo
+        numerical_stab_term = 1e-20
+        pred_lipo_adipo = pred_gene_df.iloc[0]["lipo"] / (pred_gene_df.iloc[0]["adipo"] + numerical_stab_term)
+        true_lipo_adipo = true_gene_df.iloc[0]["lipo"] / (true_gene_df.iloc[0]["adipo"] + numerical_stab_term)
+        l1_lipo_adipo = np.abs(true_lipo_adipo - pred_lipo_adipo)
+
+        # Getting the average error
+        average_l1 = 0.75 * l1_three + 0.25 * l1_lipo_adipo
+        all_l1_loss_list.append(average_l1)
+
+    # Getting the overall average over all the gene perturbation
+    l1_loss = np.mean(all_l1_loss_list)
+    return float(l1_loss)
 
 
 def pearson_score(
