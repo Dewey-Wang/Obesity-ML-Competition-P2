@@ -19,37 +19,40 @@ def load_gene_list(gene_path):
 
     return genes
 
-
 def save_prediction_h5ad(
 
     X_pred_full,
+
     adata_full,
 
     predict_perturbations,
 
     prediction_h5ad_file_path,
 
-    latent_all=None,   # <-- 新增
+    latent_all=None,
 
     genes_to_predict_path="data/predict_genes_2.txt",
 
     cells_per_perturbation=100,
 
     dtype=np.float32
+
 ):
 
     """
-    Save reconstructed gene expression matrix
-    into official competition format.
+    Save prediction in official competition format.
 
-    genes_to_predict loaded automatically from txt file.
+    保證：
+    gene order 完全符合 predict_genes_2.txt
 
-    Optional:
-    latent_all -> saved into .obsm["X_pca"]
+    步驟：
+    1. 以 adata_full.var_names 為原始順序
+    2. 按 txt 檔順序重排 columns
     """
 
+
     ############################################################
-    # load gene list
+    # load gene list (target order)
     ############################################################
 
     genes_to_predict = load_gene_list(
@@ -60,7 +63,7 @@ def save_prediction_h5ad(
 
 
     ############################################################
-    # sanity check
+    # sanity check cell count
     ############################################################
 
     n_perturb = len(predict_perturbations)
@@ -69,6 +72,7 @@ def save_prediction_h5ad(
         n_perturb * cells_per_perturbation
     )
 
+
     assert X_pred_full.shape[0] == expected_n_cells, \
         f"Cell number mismatch {X_pred_full.shape[0]} != {expected_n_cells}"
 
@@ -76,25 +80,32 @@ def save_prediction_h5ad(
     if latent_all is not None:
 
         assert latent_all.shape[0] == expected_n_cells, \
-            f"latent cell number mismatch {latent_all.shape[0]} != {expected_n_cells}"
+            f"latent cell mismatch {latent_all.shape[0]} != {expected_n_cells}"
 
 
     ############################################################
-    # reorder genes to match txt file order
+    # build gene index mapping from ORIGINAL adata order
     ############################################################
+
+    original_gene_order = list(
+        adata_full.var_names
+    )
+
 
     gene_index_map = {
 
-        g: i
+        gene: idx
 
-        for i, g in enumerate(
-
-            adata_full.var_names
-
+        for idx, gene in enumerate(
+            original_gene_order
         )
 
     }
 
+
+    ############################################################
+    # check missing genes
+    ############################################################
 
     missing_genes = [
 
@@ -109,12 +120,16 @@ def save_prediction_h5ad(
 
         raise ValueError(
 
-            f"{len(missing_genes)} genes missing "
+            f"{len(missing_genes)} genes missing\n"
 
-            f"(example: {missing_genes[:5]})"
+            f"example missing: {missing_genes[:10]}"
 
         )
 
+
+    ############################################################
+    # reorder columns to match txt order
+    ############################################################
 
     col_idx = [
 
@@ -125,7 +140,14 @@ def save_prediction_h5ad(
     ]
 
 
-    X_final = X_pred_full[:, col_idx].astype(dtype)
+    X_final = X_pred_full[:, col_idx]
+
+
+    ############################################################
+    # convert dtype
+    ############################################################
+
+    X_final = X_final.astype(dtype)
 
 
     ############################################################
@@ -157,7 +179,7 @@ def save_prediction_h5ad(
 
 
     ############################################################
-    # AnnData
+    # create AnnData
     ############################################################
 
     adata_pred = ad.AnnData(
@@ -172,16 +194,19 @@ def save_prediction_h5ad(
 
 
     ############################################################
-    # save latent representation
+    # store latent
     ############################################################
 
     if latent_all is not None:
 
-        adata_pred.obsm["X_pca"] = latent_all.astype(dtype)
+        adata_pred.obsm["X_latent"] = latent_all.astype(dtype)
 
         print(
-            "latent stored in .obsm['X_pca']:",
+
+            "latent stored:",
+
             latent_all.shape
+
         )
 
 
@@ -199,13 +224,32 @@ def save_prediction_h5ad(
 
 
     adata_pred.write_h5ad(
+
         prediction_h5ad_file_path
+
     )
 
 
     print(
-        "Saved prediction:",
+
+        "\nSaved prediction:",
+
         prediction_h5ad_file_path
+
+    )
+
+
+    ############################################################
+    # final verification
+    ############################################################
+
+    assert list(adata_pred.var_names) == genes_to_predict,"gene order mismatch"
+
+
+    print(
+
+        "gene order verified"
+
     )
 
 

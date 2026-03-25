@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-from scripts.pairing import encode_condition
+from scripts.pairing import get_condition_encoder
+
 def sample_flow(
     model,
     z0,
@@ -45,7 +46,6 @@ def get_control_latent(pert, z_NC, z_NCNC):
         return z_NC
 
     return z_NCNC
-
 def sample_all_perts(
 
     model,
@@ -58,9 +58,34 @@ def sample_all_perts(
 
     n_steps=300,
 
+    # condition encoding
+    condition_mode="onehot",
+
+    embedding_dict=None,
+
+    add_num_guides=True,
+
+    normalize_embedding=False,
+
 ):
 
     device = next(model.parameters()).device
+
+
+    ##################################
+    # build encoder
+    ##################################
+
+    encode_fn = get_condition_encoder(
+
+        condition_mode=condition_mode,
+
+        embedding_dict=embedding_dict,
+
+        add_num_guides=add_num_guides,
+
+        normalize=normalize_embedding
+    )
 
 
     all_latent = []
@@ -69,6 +94,7 @@ def sample_all_perts(
 
 
     for pert in pert_list:
+
 
         ##################################
         # choose correct control
@@ -100,7 +126,8 @@ def sample_all_perts(
         # condition vector
         ##################################
 
-        cond_vec = encode_condition(pert)
+        cond_vec = encode_fn(pert)
+
 
         cond_vec = torch.tensor(
 
@@ -154,13 +181,22 @@ def sample_all_perts(
         )
 
 
+        ##################################
+        # logging
+        ##################################
+
+        control_type = "NC" if len(pert.split("+")) == 1 else "NC+NC"
+
+
         print(
 
             f"{pert:20s}",
 
-            "source:",
+            "control:",
 
-            "NC" if len(pert.split("+"))==1 else "NC+NC",
+            control_type,
+
+            "latent:",
 
             z_pred.shape
 

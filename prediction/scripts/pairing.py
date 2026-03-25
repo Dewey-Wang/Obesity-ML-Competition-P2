@@ -39,26 +39,29 @@ def encode_condition(pert):
     return vec
 
 
-def sample_nc_cells(adata_nc, batches, batch_target):
+def sample_nc_cells(
+    adata_nc,
+    batches,
+    batch_target,
+    state_col="state",
+    batch_col="SampleID"
+):
 
     selected_cells = []
 
     for batch in batches:
 
         batch_cells = adata_nc[
-            adata_nc.obs["SampleID"] == batch
+            adata_nc.obs[batch_col] == batch
         ]
 
         n_batch = batch_target[batch]
 
         chosen = []
 
-        # ------------------
         # ensure 1 lipo_adipo
-        # ------------------
-
         lipo_cells = batch_cells[
-            batch_cells.obs["state"] == "lipo_adipo"
+            batch_cells.obs[state_col] == "lipo_adipo"
         ]
 
         if len(lipo_cells) > 0:
@@ -72,10 +75,6 @@ def sample_nc_cells(adata_nc, batches, batch_target):
             chosen.extend(chosen_lipo)
 
         remaining_n = n_batch - len(chosen)
-
-        # ------------------
-        # proportional sampling
-        # ------------------
 
         pool = batch_cells[
             ~batch_cells.obs_names.isin(chosen)
@@ -104,11 +103,10 @@ def sample_nc_cells(adata_nc, batches, batch_target):
                     ordered_states[i % len(ordered_states)]
                 ] += 1
 
-        # sample each state
         for state, n_pick in state_counts.items():
 
             state_cells = pool[
-                pool.obs["state"] == state
+                pool.obs[state_col] == state
             ]
 
             if len(state_cells) == 0:
@@ -124,7 +122,6 @@ def sample_nc_cells(adata_nc, batches, batch_target):
 
             chosen.extend(sampled)
 
-        # fill remaining randomly if needed
         remaining_pool = batch_cells[
             ~batch_cells.obs_names.isin(chosen)
         ]
@@ -142,7 +139,6 @@ def sample_nc_cells(adata_nc, batches, batch_target):
         selected_cells.extend(chosen)
 
     return selected_cells
-
 
 def compute_batch_targets(batches, total_cells):
     
@@ -169,18 +165,15 @@ def sample_diverse_nc(
     n_target,
     random_state=0,
     min_cells=4,
+    state_col="state",
+    batch_col="SampleID"
 ):
 
     rng = np.random.default_rng(random_state)
 
-    # 至少 4 cells
     n_target = max(n_target, min_cells)
 
     df = adata_nc.obs.copy()
-
-    # ------------------
-    # Step 1: ensure state diversity
-    # ------------------
 
     selected = []
 
@@ -194,7 +187,7 @@ def sample_diverse_nc(
 
     for s in states:
 
-        pool = df[df["state"] == s]
+        pool = df[df[state_col] == s]
 
         if len(pool) == 0:
             continue
@@ -210,11 +203,6 @@ def sample_diverse_nc(
         if len(selected) >= n_target:
             break
 
-
-    # ------------------
-    # Step 2: fill remaining with diverse batch sampling
-    # ------------------
-
     remaining_n = n_target - len(selected)
 
     if remaining_n > 0:
@@ -223,7 +211,7 @@ def sample_diverse_nc(
             ~df.index.isin(selected)
         ]
 
-        batches = pool["SampleID"].unique()
+        batches = pool[batch_col].unique()
 
         batch_targets = compute_batch_targets(
             batches,
@@ -233,7 +221,7 @@ def sample_diverse_nc(
         for b in batches:
 
             batch_pool = pool[
-                pool["SampleID"] == b
+                pool[batch_col] == b
             ]
 
             n_pick = batch_targets[b]
@@ -254,10 +242,7 @@ def sample_diverse_nc(
 
             selected.extend(chosen)
 
-
-    adata_sampled = adata_nc[selected]
-
-    return adata_sampled
+    return adata_nc[selected]
 
 
 def assign_state_label(df):
@@ -283,10 +268,13 @@ def assign_state_label(df):
 
     return pd.Series(labels, index=df.index)
 
-def format_state_prop(df):
-    
+def format_state_prop(
+    df,
+    state_col="state"
+):
+
     prop = (
-        df["state"]
+        df[state_col]
         .value_counts(normalize=True)
     )
 
@@ -319,10 +307,14 @@ def simplify_batch_name(batch_name):
 
 
 
-def format_batch_prop(df, max_show=6):
+def format_batch_prop(
+    df,
+    batch_col="SampleID",
+    max_show=6
+):
 
     prop = (
-        df["SampleID"]
+        df[batch_col]
         .value_counts(normalize=True)
     )
 
@@ -333,16 +325,12 @@ def format_batch_prop(df, max_show=6):
         short_k = simplify_batch_name(k)
 
         items.append(
-
             f"{short_k} {v:.3f}"
-
         )
-
 
     if len(items) > max_show:
 
         items = items[:max_show] + ["..."]
-
 
     return ", ".join(items)
 
@@ -433,17 +421,253 @@ def is_single_gene_with_nc(pert):
 
     )
     
+    
+import pickle
+import numpy as np
+from pathlib import Path
+
+
+AVAILABLE_GENES = [
+    'CEBPA','CEBPB','CEBPD','CREB1','FOXO1','KIF11','KLF15',
+    'MLXIPL','NC','NR3C1','POLR2D','PPARG','PPARG2','SF3B1',
+    'SREBF1','STAT5A','STAT5B','TCF7L2','ZBED3'
+]
+
+
+def load_gene_embeddings(
+    size="large",
+    resource_dir="../../resources"
+):
+    """
+    Load GPT gene embeddings.
+
+    Parameters
+    ----------
+    size : str
+        "large" or "small"
+
+    resource_dir : str
+        folder containing pickle file
+
+    Returns
+    -------
+    dict
+        gene -> embedding vector
+    """
+
+    fname = {
+        "large": "GPT_latest_gene_large_embeddings.pickle",
+        "small": "GPT_latest_gene_small_embeddings.pickle"
+    }[size]
+
+    path = Path(resource_dir) / fname
+
+    with open(path, "rb") as f:
+        emb = pickle.load(f)
+
+    return emb
+
+
+
+def encode_condition_embedding(
+    condition,
+    embedding_dict,
+    add_num_guides=True
+):
+    """
+    Convert perturbation string to embedding vector
+    using precomputed perturbation embeddings.
+
+    Example
+    -------
+    "PPARG+NC"
+    "PPARG+NC+NC"
+    "STAT5A+STAT5B"
+
+    Parameters
+    ----------
+    condition : str
+
+    embedding_dict : dict
+        mapping:
+        perturbation -> embedding vector
+
+    add_num_guides : bool
+        append number of guide RNAs
+
+    Returns
+    -------
+    np.ndarray
+    """
+
+    if condition not in embedding_dict:
+
+        raise ValueError(
+            f"{condition} not found in embedding_dict"
+        )
+
+    vec = embedding_dict[condition]
+
+    if add_num_guides:
+
+        n_guides = len(condition.split("+"))
+
+        vec = np.concatenate([
+            vec,
+            np.array([n_guides])
+        ])
+
+    return vec
+
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial.distance import cdist
+import numpy as np
+
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
+
+
+def make_ot_pairs(
+
+    ctrl_latent,
+    pert_latent,
+    cond_vec,
+
+    max_distance=8,
+):
+
+    cost = cdist(ctrl_latent, pert_latent, metric="euclidean")
+
+    cost[cost > max_distance] = 1e6
+
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    pairs = []
+
+    for i,j in zip(row_ind, col_ind):
+
+        if cost[i,j] < max_distance:
+
+            pairs.append({
+
+                "z0": ctrl_latent[i],
+
+                "z1": pert_latent[j],
+
+                "cond": cond_vec
+
+            })
+
+    return pairs
+
+       
+
+def make_ot_pairs_bootstrap(
+
+    ctrl_latent,
+    pert_latent,
+    cond_vec,
+    n_repeat=3,
+    rng=None
+):
+
+    if rng is None:
+
+        rng = np.random.default_rng()
+
+    pairs = []
+
+    for _ in range(n_repeat):
+
+        ctrl_sample = ctrl_latent[
+
+            rng.choice(
+
+                len(ctrl_latent),
+
+                size=len(ctrl_latent),
+
+                replace=True
+            )
+
+        ]
+
+        new_pairs = make_ot_pairs(
+
+            ctrl_sample,
+
+            pert_latent,
+
+            cond_vec
+        )
+
+        pairs.extend(new_pairs)
+
+    return pairs
+    
+    
+def get_condition_encoder(
+    condition_mode="onehot",
+    embedding_dict=None,
+    add_num_guides=True
+):
+
+    if condition_mode == "onehot":
+
+        return lambda pert: encode_condition(pert)
+
+
+    elif condition_mode == "embedding":
+
+        if embedding_dict is None:
+
+            raise ValueError(
+                "embedding_dict required"
+            )
+
+
+        return lambda pert: encode_condition_embedding(
+
+            pert,
+
+            embedding_dict,
+
+            add_num_guides=add_num_guides
+        )
+
+
+    else:
+
+        raise ValueError(
+            "condition_mode must be one of:\n"
+            "onehot\n"
+            "embedding"
+        )
+        
 def build_pairs_from_anndata(
     adata,
+    latent_key="X_pca",
+    state_col="state",
+    batch_col="SampleID",
+    gene_col="gene",
+
+    # condition encoding
+    condition_mode="onehot",
+    embedding_dict=None,
+    add_num_guides=True,
+    normalize_embedding=False,
+
     small_threshold=200,
     random_state=0,
-    verbose=False
+    verbose=False,
+    n_repeat_ot_pairs = 3
 ):
 
     rng = np.random.default_rng(random_state)
 
-    latent = adata.obsm["X_pca"]
-    obs_gene = adata.obs["gene"].values
+    latent = adata.obsm[latent_key]
+
+    obs_gene = adata.obs[gene_col].values
 
     unique_perts = np.unique(obs_gene)
 
@@ -456,6 +680,18 @@ def build_pairs_from_anndata(
 
     pairs = []
 
+    # choose encoder
+    encode_fn = get_condition_encoder(
+
+        condition_mode=condition_mode,
+
+        embedding_dict=embedding_dict,
+
+        add_num_guides=add_num_guides,
+
+        normalize=normalize_embedding
+    )
+
 
     for pert in unique_perts:
 
@@ -463,16 +699,12 @@ def build_pairs_from_anndata(
             continue
 
 
-        cond_vec = encode_condition(pert)
+        cond_vec = encode_fn(pert)
 
         pert_idx = pert_to_idx[pert]
 
         pert_latent = latent[pert_idx]
 
-
-        # ------------------
-        # primary control
-        # ------------------
 
         primary_control = get_primary_control(pert)
 
@@ -482,77 +714,105 @@ def build_pairs_from_anndata(
 
 
         if min(
+
             len(ctrl_latent),
+
             len(pert_latent)
+
         ) < small_threshold:
 
             new_pairs = make_all_pairs(
+
                 ctrl_latent,
+
                 pert_latent,
+
                 cond_vec
+
             )
 
             strategy = "all-pairs"
 
         else:
 
-            new_pairs = make_random_pairs(
+            new_pairs = make_ot_pairs_bootstrap(
+
                 ctrl_latent,
+
                 pert_latent,
+
                 cond_vec,
-                rng
+                n_repeat=n_repeat_ot_pairs,
+
             )
 
-            strategy = "random"
+            strategy = "ot_pairs"
 
 
         pairs.extend(new_pairs)
 
-        # ------------------
-        # primary pairing print
-        # ------------------
 
         print(
+
             f"{pert} {len(new_pairs)} {strategy}"
+
         )
+
 
         if verbose:
 
             target_df = adata.obs.iloc[pert_idx]
+
             ctrl_df = adata.obs.iloc[ctrl_idx]
+
 
             print(f"\n{pert} distribution")
 
-            print(
-                f"target state: {format_state_prop(target_df)}"
-            )
 
             print(
-                f"{primary_control} state: {format_state_prop(ctrl_df)}"
+
+                f"target state: {format_state_prop(target_df,state_col)}"
+
             )
 
-            print()
-
-            print(
-                f"target batch: {format_batch_prop(target_df)}"
-            )
 
             print(
-                f"{primary_control} batch: {format_batch_prop(ctrl_df)}"
+
+                f"{primary_control} state: {format_state_prop(ctrl_df,state_col)}"
+
             )
+
 
             print()
 
 
-        # ------------------
-        # NC fallback
-        # ------------------
+            print(
 
+                f"target batch: {format_batch_prop(target_df,batch_col)}"
+
+            )
+
+
+            print(
+
+                f"{primary_control} batch: {format_batch_prop(ctrl_df,batch_col)}"
+
+            )
+
+
+            print()
+
+
+
+        # fallback NC
         if is_single_gene_with_nc(pert):
-            print(f"{pert} detected as single-gene perturbation" )
+
             adata_nc = adata[
-                adata.obs["gene"] == "NC"
+
+                adata.obs[gene_col] == "NC"
+
             ]
+
 
             adata_nc_sampled = sample_diverse_nc(
 
@@ -562,53 +822,36 @@ def build_pairs_from_anndata(
 
                 random_state,
 
+                state_col=state_col,
+
+                batch_col=batch_col
+
             )
 
-            nc_latent = adata_nc_sampled.obsm["X_pca"]
 
-            extra_pairs = make_all_pairs(
+            nc_latent = adata_nc_sampled.obsm[latent_key]
+
+            extra_pairs = make_ot_pairs_bootstrap(
 
                 nc_latent,
 
                 pert_latent,
 
-                cond_vec
+                cond_vec,
+                n_repeat=n_repeat_ot_pairs,
+
 
             )
+
 
             pairs.extend(extra_pairs)
 
+
             print(
+
                 f"{pert} {len(extra_pairs)} random (NC fallback)"
+
             )
-
-            if verbose:
-
-                target_df = adata.obs.iloc[pert_idx]
-
-                nc_df = adata_nc_sampled.obs
-
-                print(f"\n{pert} distribution")
-
-                print(
-                    f"target state: {format_state_prop(target_df)}"
-                )
-
-                print(
-                    f"NC state: {format_state_prop(nc_df)}"
-                )
-
-                print()
-
-                print(
-                    f"target batch: {format_batch_prop(target_df)}"
-                )
-
-                print(
-                    f"NC batch: {format_batch_prop(nc_df)}"
-                )
-
-                print()
 
 
     return pairs

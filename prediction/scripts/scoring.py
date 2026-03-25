@@ -366,3 +366,100 @@ def sample_100_across_batches(
     sampled_idx = sampled_idx[:n_cells]
 
     return np.array(sampled_idx)
+
+
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+
+
+def latent_to_expression_nn(
+
+    latent_query,
+
+    latent_train,
+
+    adata_train,
+
+    k=30,
+
+    method="softmax",
+
+    eps=1e-8
+):
+
+    nbrs = NearestNeighbors(
+
+        n_neighbors=k,
+
+        metric="euclidean"
+
+    ).fit(latent_train)
+
+
+    distances, indices = nbrs.kneighbors(latent_query)
+
+
+    # convert sparse to dense if needed
+    gene_train = adata_train.X
+
+    if not isinstance(gene_train, np.ndarray):
+
+        gene_train = gene_train.toarray()
+
+
+    preds = []
+
+
+    for d, idx in zip(distances, indices):
+
+        neigh_expr = gene_train[idx]
+
+
+        # 保證 2D
+        neigh_expr = np.atleast_2d(neigh_expr)
+
+        d = np.atleast_1d(d)
+
+
+        if method == "mean":
+
+            pred = neigh_expr.mean(axis=0)
+
+
+        elif method == "distance":
+
+            w = 1 / (d + eps)
+
+            w = w / w.sum()
+
+            pred = (neigh_expr * w[:, None]).sum(axis=0)
+
+
+        elif method == "softmax":
+
+            w = np.exp(-d)
+
+            w = w / w.sum()
+
+            pred = (neigh_expr * w[:, None]).sum(axis=0)
+
+
+        else:
+
+            raise ValueError(
+
+                "method must be:\n"
+
+                "mean\n"
+
+                "distance\n"
+
+                "softmax"
+
+            )
+
+
+        preds.append(pred)
+
+
+    return np.vstack(preds)
